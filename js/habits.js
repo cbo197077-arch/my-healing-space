@@ -1,5 +1,42 @@
 const calGrid = document.getElementById('calendar-grid');
-let completedDays = JSON.parse(localStorage.getItem('healing_skincare_days')) || [];
+
+// ==========================================
+// MIGRATION & LOGIC CHO LỊCH SKINCARE
+// ==========================================
+let skincareViewDate = new Date();
+
+// Chuyển đổi dữ liệu cũ (chỉ có mảng ngày) sang dữ liệu có gắn liền với Tháng/Năm
+let oldSkincare = localStorage.getItem('healing_skincare_days');
+if (oldSkincare) {
+    let now = new Date();
+    let key = `healing_skincare_days_${now.getFullYear()}_${now.getMonth() + 1}`;
+    if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, oldSkincare);
+    }
+    localStorage.removeItem('healing_skincare_days');
+}
+
+function getSkincareCompletedDays() {
+    let key = `healing_skincare_days_${skincareViewDate.getFullYear()}_${skincareViewDate.getMonth() + 1}`;
+    return JSON.parse(localStorage.getItem(key)) || [];
+}
+
+function saveSkincareCompletedDays(days) {
+    let key = `healing_skincare_days_${skincareViewDate.getFullYear()}_${skincareViewDate.getMonth() + 1}`;
+    localStorage.setItem(key, JSON.stringify(days));
+}
+
+// Bắt sự kiện 2 nút qua/lại tháng của Skincare
+const btnPrevSkincare = document.getElementById('prev-month-skincare');
+const btnNextSkincare = document.getElementById('next-month-skincare');
+if (btnPrevSkincare) btnPrevSkincare.addEventListener('click', () => {
+    skincareViewDate.setMonth(skincareViewDate.getMonth() - 1);
+    renderCalendar();
+});
+if (btnNextSkincare) btnNextSkincare.addEventListener('click', () => {
+    skincareViewDate.setMonth(skincareViewDate.getMonth() + 1);
+    renderCalendar();
+});
 
 const streakCounter = document.getElementById('streak-counter');
 const completionPercent = document.getElementById('completion-percent');
@@ -33,14 +70,19 @@ function calculateStreak(daysArray) {
 function renderCalendar() {
     if (!calGrid) return;
     calGrid.innerHTML = '';
+    
+    const currentMonth = skincareViewDate.getMonth() + 1;
+    const currentYear = skincareViewDate.getFullYear();
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    
     const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    // SỬA LỖI Ở ĐÂY: Thêm + 1 vào getMonth() để đếm đúng số ngày của tháng hiện tại
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const today = now.getDate();
+    // Chỉ hiển thị viền tím (Hôm nay) nếu đang xem đúng tháng hiện tại của đời thực
+    const isCurrentMonth = now.getMonth() === skincareViewDate.getMonth() && now.getFullYear() === skincareViewDate.getFullYear();
+    const today = isCurrentMonth ? now.getDate() : -1;
 
-    // Thuật toán bù đắp thứ cho ngày đầu tháng
-    const firstDayIndex = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
+    let completedDays = getSkincareCompletedDays();
+
+    const firstDayIndex = new Date(currentYear, currentMonth - 1, 1).getDay();
     const blanks = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
     for (let i = 0; i < blanks; i++) {
         const blankDiv = document.createElement('div');
@@ -48,7 +90,7 @@ function renderCalendar() {
     }
 
     const monthStr = window.appState.language === 'en' ? 'Month' : 'Tháng';
-    if (monthDisplay) monthDisplay.innerText = `${monthStr} ${currentMonth}`;
+    if (monthDisplay) monthDisplay.innerHTML = `${monthStr} ${currentMonth}<br><span class="text-[9px] opacity-70">${currentYear}</span>`;
     const todayStr = window.appState.language === 'en' ? 'Today' : 'Hôm nay';
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -71,7 +113,7 @@ function renderCalendar() {
             } else {
                 completedDays.splice(index, 1);
             }
-            localStorage.setItem('healing_skincare_days', JSON.stringify(completedDays));
+            saveSkincareCompletedDays(completedDays);
             renderCalendar();
         });
         calGrid.appendChild(dayDiv);
@@ -99,7 +141,26 @@ function renderCalendar() {
     if (completionFraction) completionFraction.innerHTML = `<span data-i18n="completed">${completedStr}</span><br><span class="text-[11px] font-bold text-slate-700 block">${completedCount}/${daysInMonth}</span>`;
 }
 
+// ==========================================
+// MIGRATION & LOGIC CHO THÓI QUEN TỰ TẠO
+// ==========================================
 let customHabits = JSON.parse(localStorage.getItem('healing_custom_habits')) || [];
+
+// Chuyển đổi dữ liệu cũ sang cấu trúc lưu được nhiều tháng { "2026-5": [...], "2026-6": [...] }
+customHabits.forEach(habit => {
+    if (!habit.history) {
+        habit.history = {};
+        let now = new Date();
+        let key = `${now.getFullYear()}-${now.getMonth() + 1}`;
+        habit.history[key] = habit.days || [];
+        delete habit.days; 
+    }
+    if (!habit.viewDate) {
+        habit.viewDate = new Date();
+    } else {
+        habit.viewDate = new Date(habit.viewDate); 
+    }
+});
 
 function renderCustomHabits() {
     const container = document.getElementById('custom-habits-container');
@@ -107,9 +168,6 @@ function renderCustomHabits() {
     container.innerHTML = '';
     
     const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const today = now.getDate();
-
     const monthStr = window.appState.language === 'en' ? 'Month' : 'Tháng';
     const todayStr = window.appState.language === 'en' ? 'Today' : 'Hôm nay';
     const completedStr = window.appState.language === 'en' ? 'Completed' : 'Hoàn thành';
@@ -123,18 +181,28 @@ function renderCustomHabits() {
     const dSun = window.appState.language === 'en' ? 'Sun' : 'CN';
 
     customHabits.forEach((habit, hIndex) => {
-        habit.days = habit.days || []; 
         const isPinned = habit.isPinned || false;
         const isExpanded = habit.isExpanded !== false; 
 
-        let streak = calculateStreak(habit.days);
-        const percent = Math.round((habit.days.length / daysInMonth) * 100) || 0;
+        if (!habit.viewDate) habit.viewDate = new Date();
+        const cMonth = habit.viewDate.getMonth() + 1;
+        const cYear = habit.viewDate.getFullYear();
+        const historyKey = `${cYear}-${cMonth}`;
+        
+        habit.history[historyKey] = habit.history[historyKey] || [];
+        const completedDays = habit.history[historyKey];
+
+        const daysInMonth = new Date(cYear, cMonth, 0).getDate();
+        const isCurrentMonth = now.getMonth() === habit.viewDate.getMonth() && now.getFullYear() === habit.viewDate.getFullYear();
+        const today = isCurrentMonth ? now.getDate() : -1;
+
+        let streak = calculateStreak(completedDays);
+        const percent = Math.round((completedDays.length / daysInMonth) * 100) || 0;
 
         const card = document.createElement('div');
         card.className = `bg-white/40 p-5 rounded-[20px] border ${isPinned ? 'border-indigo-400 shadow-md' : 'border-white/60 shadow-sm'} relative flex flex-col transition-all duration-300`;
         card.style.order = isPinned ? '-1' : '0';
 
-        // SỬA LỖI Ở ĐÂY: bọc habit.name trong thẻ span và thêm class translate-y-[1px]
         card.innerHTML = `
             <div class="flex justify-between items-center mb-3">
                 <div class="font-bold text-[15px] text-slate-800 uppercase flex items-center gap-1.5">
@@ -167,12 +235,16 @@ function renderCustomHabits() {
                     
                     <div class="w-[110px] shrink-0 bg-white/50 border border-white rounded-[20px] p-3 shadow-[inset_0_2px_10px_rgba(255,255,255,1)] flex flex-col justify-center">
                         <div class="flex justify-between items-center mb-3">
-                            <span class="text-xs font-bold text-slate-700">${monthStr} ${now.getMonth() + 1}</span>
+                            <div class="flex items-center gap-1">
+                                <button class="prev-month-custom text-gray-400 hover:text-indigo-500 p-0.5" data-index="${hIndex}"><i class="ph-bold ph-caret-left"></i></button>
+                                <span class="text-[10px] font-bold text-slate-700 text-center w-[35px] leading-tight" id="custom-month-display-${hIndex}">${monthStr} ${cMonth}<br/><span class="text-[8px] opacity-70">${cYear}</span></span>
+                                <button class="next-month-custom text-gray-400 hover:text-indigo-500 p-0.5" data-index="${hIndex}"><i class="ph-bold ph-caret-right"></i></button>
+                            </div>
                             <i class="ph-fill ph-leaf text-emerald-400 text-base"></i>
                         </div>
                         <div class="flex items-center gap-2 bg-white/60 p-1.5 rounded-xl border border-white">
                             <div class="w-[34px] h-[34px] rounded-full border-[3px] border-emerald-400 flex items-center justify-center text-[9px] font-bold text-emerald-600 shrink-0">${percent}%</div>
-                            <div class="text-[8px] text-gray-500 font-medium leading-tight">${completedStr}<br><span class="text-[10px] font-bold text-slate-700 block">${habit.days.length}/${daysInMonth}</span></div>
+                            <div class="text-[8px] text-gray-500 font-medium leading-tight">${completedStr}<br><span class="text-[10px] font-bold text-slate-700 block">${completedDays.length}/${daysInMonth}</span></div>
                         </div>
                     </div>
                 </div>
@@ -182,9 +254,7 @@ function renderCustomHabits() {
 
         if (isExpanded) {
             const grid = document.getElementById(`custom-grid-${hIndex}`);
-            
-            // Tính số ô trống bù vào đầu lưới
-            const firstDayIndex = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
+            const firstDayIndex = new Date(cYear, cMonth - 1, 1).getDay();
             const blanks = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
             for (let i = 0; i < blanks; i++) {
                 const blankDiv = document.createElement('div');
@@ -198,18 +268,18 @@ function renderCustomHabits() {
                     dayDiv.classList.add('today');
                     dayDiv.setAttribute('data-today', todayStr);
                 }
-                if (habit.days.includes(i)) dayDiv.classList.add('completed');
+                if (completedDays.includes(i)) dayDiv.classList.add('completed');
                 dayDiv.innerText = i;
 
                 dayDiv.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const index = habit.days.indexOf(i);
+                    const index = completedDays.indexOf(i);
                     
                     if (index === -1) {
-                        habit.days.push(i);
+                        completedDays.push(i);
                         if(window.playSound) window.playSound('success');
                     } else {
-                        habit.days.splice(index, 1);
+                        completedDays.splice(index, 1);
                     }
                     localStorage.setItem('healing_custom_habits', JSON.stringify(customHabits));
                     renderCustomHabits(); 
@@ -217,6 +287,26 @@ function renderCustomHabits() {
                 grid.appendChild(dayDiv);
             }
         }
+    });
+
+    document.querySelectorAll('.prev-month-custom').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = btn.getAttribute('data-index');
+            customHabits[idx].viewDate.setMonth(customHabits[idx].viewDate.getMonth() - 1);
+            localStorage.setItem('healing_custom_habits', JSON.stringify(customHabits));
+            renderCustomHabits();
+        });
+    });
+
+    document.querySelectorAll('.next-month-custom').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = btn.getAttribute('data-index');
+            customHabits[idx].viewDate.setMonth(customHabits[idx].viewDate.getMonth() + 1);
+            localStorage.setItem('healing_custom_habits', JSON.stringify(customHabits));
+            renderCustomHabits();
+        });
     });
 
     document.querySelectorAll('.toggle-pin').forEach(btn => {
@@ -259,7 +349,12 @@ if (btnAddHabit) {
         e.stopPropagation();
         const val = inputHabit.value.trim();
         if (val) {
-            customHabits.push({ name: val, days: [], isPinned: false, isExpanded: true });
+            let now = new Date();
+            let key = `${now.getFullYear()}-${now.getMonth() + 1}`;
+            let historyObj = {};
+            historyObj[key] = [];
+            
+            customHabits.push({ name: val, history: historyObj, isPinned: false, isExpanded: true, viewDate: now });
             inputHabit.value = '';
             localStorage.setItem('healing_custom_habits', JSON.stringify(customHabits));
             renderCustomHabits();
@@ -267,6 +362,9 @@ if (btnAddHabit) {
     });
 }
 
+// ==========================================
+// GIỮ NGUYÊN PHẦN CÒN LẠI CỦA BẠN (NHẬT KÝ, CÚN AI, FITNESS, GHI CHÚ)
+// ==========================================
 let currentMood = localStorage.getItem('healing_current_mood') || '';
 const journalTextarea = document.getElementById('journal-text');
 const savedLabel = document.getElementById('journal-saved-time');
@@ -575,7 +673,7 @@ function renderNotes() {
         div.innerHTML = `
             <div class="flex-1 min-w-0">
                 <div class="text-[9px] font-bold opacity-50 mb-1"><i class="ph ph-calendar-blank"></i> ${note.date}</div>
-                <div class="font-semibold text-xs leading-relaxed text-current break-words whitespace-pre-line">${note.text}</div>
+                <div class="fontsemibold text-xs leading-relaxed text-current break-words whitespace-pre-line">${note.text}</div>
             </div>
             <button class="text-gray-400 hover:text-red-500 delete-note shrink-0 pt-0.5" data-index="${actualIndex}">
                 <i class="ph ph-trash text-base pointer-events-none"></i>
